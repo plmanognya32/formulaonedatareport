@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>F1 Data Platform</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0f0f0f; color: #fff; font-family: 'Segoe UI', sans-serif; }
+    header { background: #e10600; padding: 16px 32px; display: flex; align-items: center; gap: 16px; }
+    header h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: 1px; }
+    header span { font-size: 0.85rem; opacity: 0.85; }
+    .controls { padding: 24px 32px 0; display: flex; gap: 12px; align-items: center; }
+    select { background: #1e1e1e; color: #fff; border: 1px solid #333; padding: 8px 14px; border-radius: 6px; font-size: 0.9rem; cursor: pointer; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 24px 32px; }
+    .card { background: #1a1a1a; border-radius: 12px; padding: 20px; border: 1px solid #2a2a2a; }
+    .card h2 { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; color: #e10600; margin-bottom: 16px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th { text-align: left; color: #888; font-weight: 500; padding: 6px 8px; border-bottom: 1px solid #2a2a2a; }
+    td { padding: 8px 8px; border-bottom: 1px solid #1e1e1e; }
+    tr:hover td { background: #222; }
+    .team-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+    canvas { max-height: 280px; }
+    .full-width { grid-column: 1 / -1; }
+    .stat-row { display: flex; gap: 24px; margin-bottom: 20px; }
+    .stat { background: #111; border-radius: 8px; padding: 14px 20px; flex: 1; }
+    .stat .val { font-size: 1.6rem; font-weight: 700; color: #e10600; }
+    .stat .lbl { font-size: 0.75rem; color: #888; margin-top: 4px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🏎️ F1 DATA PLATFORM</h1>
+  <span>Medallion Architecture · Bronze → Silver → Gold</span>
+</header>
+
+<div class="controls">
+  <label style="color:#888;font-size:0.85rem;">Session:</label>
+  <select id="sessionSelect" onchange="loadData()">
+    <option value="">All Sessions</option>
+  </select>
+</div>
+
+<div class="grid">
+  <div class="card full-width">
+    <div class="stat-row" id="stats"></div>
+  </div>
+
+  <div class="card">
+    <h2>Fastest Laps</h2>
+    <table>
+      <thead><tr><th>#</th><th>Driver</th><th>Team</th><th>Fastest Lap</th><th>S1</th><th>S2</th><th>S3</th></tr></thead>
+      <tbody id="fastestTable"></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Avg Race Pace (seconds)</h2>
+    <canvas id="paceChart"></canvas>
+  </div>
+
+  <div class="card full-width">
+    <h2>Race Summary</h2>
+    <table>
+      <thead><tr><th>Driver</th><th>Team</th><th>Laps</th><th>Avg Lap</th><th>Fastest</th><th>Pit Stops</th></tr></thead>
+      <tbody id="summaryTable"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const API = 'https://verbose-space-winner-qgxrpqp7j7pc9gx4-8000.app.github.dev';
+const TEAM_COLORS = {
+  'Ferrari': '#e8002d', 'McLaren': '#ff8000', 'Mercedes': '#00d2be',
+  'Red Bull Racing': '#3671c6', 'Aston Martin': '#229971', 'Alpine': '#0093cc',
+  'Williams': '#64c4ff', 'RB': '#6692ff', 'Kick Sauber': '#52e252', 'Haas F1 Team': '#b6babd'
+};
+let paceChart = null;
+
+function fmt(s) {
+  if (!s) return '-';
+  const m = Math.floor(s / 60);
+  const sec = (s % 60).toFixed(3).padStart(6, '0');
+  return m > 0 ? `${m}:${sec}` : `${parseFloat(s).toFixed(3)}`;
+}
+
+async function loadSessions() {
+  const res = await fetch(`${API}/sessions`);
+  const data = await res.json();
+  const sel = document.getElementById('sessionSelect');
+  data.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.session_key;
+    opt.text = `Session ${s.session_key}`;
+    sel.appendChild(opt);
+  });
+  loadData();
+}
+
+async function loadData() {
+  const sk = document.getElementById('sessionSelect').value;
+  const qs = sk ? `?session_key=${sk}` : '';
+
+  const [fastest, summary] = await Promise.all([
+    fetch(`${API}/fastest-laps${qs}`).then(r => r.json()),
+    fetch(`${API}/race-summary${qs}`).then(r => r.json())
+  ]);
+
+  renderStats(fastest, summary);
+  renderFastest(fastest);
+  renderSummary(summary);
+  renderChart(summary);
+}
+
+function renderStats(fastest, summary) {
+  const top = fastest[0] || {};
+  const totalLaps = summary.reduce((a, b) => a + (b.total_laps || 0), 0);
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><div class="val">${top.abbreviation || '-'}</div><div class="lbl">Fastest Driver</div></div>
+    <div class="stat"><div class="val">${fmt(top.fastest_lap_seconds)}</div><div class="lbl">Fastest Lap</div></div>
+    <div class="stat"><div class="val">${top.team_name || '-'}</div><div class="lbl">Top Team</div></div>
+    <div class="stat"><div class="val">${totalLaps.toLocaleString()}</div><div class="lbl">Total Laps Analysed</div></div>
+  `;
+}
+
+function renderFastest(data) {
+  document.getElementById('fastestTable').innerHTML = data.slice(0, 10).map((r, i) => {
+    const color = TEAM_COLORS[r.team_name] || '#888';
+    return `<tr>
+      <td>${i + 1}</td>
+      <td>${r.full_name || '-'}</td>
+      <td><span class="team-dot" style="background:${color}"></span>${r.team_name || '-'}</td>
+      <td><strong>${fmt(r.fastest_lap_seconds)}</strong></td>
+      <td>${fmt(r.best_s1)}</td>
+      <td>${fmt(r.best_s2)}</td>
+      <td>${fmt(r.best_s3)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderSummary(data) {
+  document.getElementById('summaryTable').innerHTML = data.slice(0, 15).map(r => {
+    const color = TEAM_COLORS[r.team_name] || '#888';
+    return `<tr>
+      <td>${r.full_name || '-'}</td>
+      <td><span class="team-dot" style="background:${color}"></span>${r.team_name || '-'}</td>
+      <td>${r.total_laps}</td>
+      <td>${fmt(r.avg_lap_seconds)}</td>
+      <td>${fmt(r.fastest_lap_seconds)}</td>
+      <td>${r.pit_stops ?? '-'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderChart(data) {
+  const top10 = data.slice(0, 10);
+  const ctx = document.getElementById('paceChart').getContext('2d');
+  if (paceChart) paceChart.destroy();
+  paceChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: top10.map(r => r.abbreviation || r.full_name),
+      datasets: [{
+        label: 'Avg Lap (s)',
+        data: top10.map(r => r.avg_lap_seconds),
+        backgroundColor: top10.map(r => TEAM_COLORS[r.team_name] || '#555'),
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#aaa' }, grid: { color: '#222' } },
+        y: { ticks: { color: '#aaa' }, grid: { color: '#222' },
+             min: d => Math.min(...d) - 2 }
+      }
+    }
+  });
+}
+
+loadSessions();
+</script>
+</body>
+</html>
