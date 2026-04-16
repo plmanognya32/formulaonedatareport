@@ -1,0 +1,19 @@
+name: 'f1_transforms'
+version: '1.0.0'
+config-version: 2
+
+profile: 'f1_transforms'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+models:
+  f1_transforms:
+    silver:
+      +schema: silver
+    gold:
+      +schema: gold
