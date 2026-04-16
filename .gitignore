@@ -1,2 +1,4 @@
 gcs-key.json
 __pycache__/
+exec -l /bin/bash/
+google-cloud-sdk/
